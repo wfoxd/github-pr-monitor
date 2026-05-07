@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 # _request_copilot_review.sh — Request or re-request a Copilot review on a PR.
 #
-# Usage (sourced or called as a subprocess):
+# Usage:
 #   bash scripts/_request_copilot_review.sh --pr <number> --repo <owner/name>
 #
 # Strategy:
-#   1. Look up Copilot's GraphQL node id. Check in order:
-#      a. Cache file ~/.cache/github-pr-monitor/copilot_node_id
-#         (keyed per repo so cross-repo installs don't collide).
-#      b. PR's suggestedReviewers (works before first review).
-#      c. PR's existing reviews (works after first review, when Copilot
-#         drops off suggestedReviewers).
-#   2. Call the GraphQL requestReviews mutation with that node id.
-#   3. Re-query reviewRequests to confirm it actually landed.
+#   1. Resolve Copilot's GraphQL node id (BOT_... prefix). Check in order:
+#      a. Cache file ~/.cache/github-pr-monitor/copilot_node_id_<repo-slug>
+#      b. PR's suggestedReviewers (works before first review)
+#      c. PR's past reviews (fallback once Copilot drops off suggestedReviewers)
+#   2. Call requestReviews GraphQL mutation using the botIds field.
+#   3. Verify by re-querying reviewRequests; warn if it didn't land.
 #   4. On success, persist the node id to the cache.
 #
-# Exits 0 on success, 1 if Copilot review request couldn't be confirmed.
-# Human-readable progress on stderr; nothing on stdout.
+# Exits 0 on success, 1 if Copilot review couldn't be confirmed.
+# Progress on stderr; nothing on stdout.
 
 set -euo pipefail
 
@@ -36,12 +34,11 @@ done
 OWNER="${REPO_FULL%/*}"
 NAME="${REPO_FULL#*/}"
 
-# Cache path — keyed by repo slug so installs across repos don't collide.
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor"
 CACHE_KEY="$(echo "$REPO_FULL" | tr '/' '_')"
 CACHE_FILE="$CACHE_DIR/copilot_node_id_${CACHE_KEY}"
 
-# --- Step 1: resolve Copilot's node id -----------------------------------
+# --- Step 1: resolve Copilot's bot node id --------------------------------
 
 COPILOT_NODE_ID=""
 
@@ -51,17 +48,16 @@ if [[ -f "$CACHE_FILE" ]]; then
   echo ">> Using cached Copilot node id: $COPILOT_NODE_ID" >&2
 fi
 
-# 1b. suggestedReviewers — reliable before first review on a PR.
+# 1b. suggestedReviewers — Bot type, not User.
 if [[ -z "$COPILOT_NODE_ID" ]]; then
-  SUGGEST_QUERY='query($owner:String!,$name:String!,$pr:Int!){
-    repository(owner:$owner,name:$name){
-      pullRequest(number:$pr){
-        suggestedReviewers{ reviewer{ id login } }
-      }
-    }
-  }'
   COPILOT_NODE_ID="$(gh api graphql \
-    -f query="$SUGGEST_QUERY" \
+    -f query='query($owner:String!,$name:String!,$pr:Int!){
+      repository(owner:$owner,name:$name){
+        pullRequest(number:$pr){
+          suggestedReviewers{ reviewer{ ... on User{ id login } } }
+        }
+      }
+    }' \
     -F owner="$OWNER" -F name="$NAME" -F pr="$PR" \
     | jq -r '
         .data.repository.pullRequest.suggestedReviewers[]
@@ -70,23 +66,45 @@ if [[ -z "$COPILOT_NODE_ID" ]]; then
   [[ -n "$COPILOT_NODE_ID" ]] && echo ">> Found Copilot node id via suggestedReviewers." >&2
 fi
 
-# 1c. Past reviews — fallback once Copilot has already reviewed (drops off suggestedReviewers).
+# 1c. Past reviews on this PR — works after first review, when Copilot
+#     drops off suggestedReviewers.
 if [[ -z "$COPILOT_NODE_ID" ]]; then
-  REVIEWS_QUERY='query($owner:String!,$name:String!,$pr:Int!){
-    repository(owner:$owner,name:$name){
-      pullRequest(number:$pr){
-        reviews(last:50){ nodes{ author{ id login } } }
-      }
-    }
-  }'
   COPILOT_NODE_ID="$(gh api graphql \
-    -f query="$REVIEWS_QUERY" \
+    -f query='query($owner:String!,$name:String!,$pr:Int!){
+      repository(owner:$owner,name:$name){
+        pullRequest(number:$pr){
+          reviews(last:50){ nodes{ author{ ... on Bot{ id login } } } }
+        }
+      }
+    }' \
     -F owner="$OWNER" -F name="$NAME" -F pr="$PR" \
     | jq -r '
         .data.repository.pullRequest.reviews.nodes[]
         | select(.author.login == "copilot-pull-request-reviewer")
         | .author.id' 2>/dev/null | head -1 || true)"
-  [[ -n "$COPILOT_NODE_ID" ]] && echo ">> Found Copilot node id via past reviews." >&2
+  [[ -n "$COPILOT_NODE_ID" ]] && echo ">> Found Copilot node id via this PR's past reviews." >&2
+fi
+
+# 1d. Any recent PR on the repo — last-resort for a brand-new PR when
+#     suggestedReviewers is empty and no review exists yet on this PR.
+if [[ -z "$COPILOT_NODE_ID" ]]; then
+  COPILOT_NODE_ID="$(gh api graphql \
+    -f query='query($owner:String!,$name:String!){
+      repository(owner:$owner,name:$name){
+        pullRequests(last:20,states:[OPEN,CLOSED,MERGED]){
+          nodes{
+            reviews(last:20){ nodes{ author{ ... on Bot{ id login } } } }
+          }
+        }
+      }
+    }' \
+    -F owner="$OWNER" -F name="$NAME" \
+    | jq -r '
+        .data.repository.pullRequests.nodes[]
+        | .reviews.nodes[]
+        | select(.author.login == "copilot-pull-request-reviewer")
+        | .author.id' 2>/dev/null | head -1 || true)"
+  [[ -n "$COPILOT_NODE_ID" ]] && echo ">> Found Copilot node id via repo PR history." >&2
 fi
 
 if [[ -z "$COPILOT_NODE_ID" ]]; then
@@ -104,16 +122,18 @@ PR_NODE_ID="$(gh api graphql \
   -F owner="$OWNER" -F name="$NAME" -F pr="$PR" \
   | jq -r '.data.repository.pullRequest.id')"
 
-# --- Step 3: call requestReviews mutation --------------------------------
+# --- Step 3: call requestReviews with botIds -----------------------------
+#
+# Copilot is a Bot, not a User — it must go in botIds, not userIds.
 
 gh api graphql \
-  -f query='mutation($prId:ID!,$userIds:[ID!]!){
-    requestReviews(input:{pullRequestId:$prId,userIds:$userIds,union:true}){
+  -f query='mutation($prId:ID!,$botIds:[ID!]!){
+    requestReviews(input:{pullRequestId:$prId,botIds:$botIds,union:true}){
       pullRequest{ id }
     }
   }' \
   -F prId="$PR_NODE_ID" \
-  -F 'userIds[]='"$COPILOT_NODE_ID" \
+  -F 'botIds[]='"$COPILOT_NODE_ID" \
   >/dev/null
 
 # --- Step 4: verify it actually landed -----------------------------------
@@ -123,7 +143,7 @@ CONFIRMED="$(gh api graphql \
     repository(owner:$owner,name:$name){
       pullRequest(number:$pr){
         reviewRequests(first:10){
-          nodes{ requestedReviewer{ ... on User{ login } } }
+          nodes{ requestedReviewer{ ... on Bot{ login } ... on User{ login } } }
         }
       }
     }
