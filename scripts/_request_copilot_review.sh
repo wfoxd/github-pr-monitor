@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # _request_copilot_review.sh — Request or re-request a Copilot review on a PR.
 #
-# Usage:
+# Usage (called as a subprocess — do not source):
 #   bash scripts/_request_copilot_review.sh --pr <number> --repo <owner/name>
 #
 # Strategy:
 #   1. Resolve Copilot's GraphQL node id (BOT_... prefix). Check in order:
-#      a. Cache file ~/.cache/github-pr-monitor/copilot_node_id_<repo-slug>
+#      a. Cache: ~/.cache/github-pr-monitor/copilot_node_id_<owner>_<name>
 #      b. PR's suggestedReviewers (works before first review)
 #      c. PR's past reviews (fallback once Copilot drops off suggestedReviewers)
+#      d. Any recent PR on the repo (last-resort for a brand-new install)
 #   2. Call requestReviews GraphQL mutation using the botIds field.
 #   3. Verify by re-querying reviewRequests; warn if it didn't land.
 #   4. On success, persist the node id to the cache.
 #
-# Exits 0 on success, 1 if Copilot review couldn't be confirmed.
+# Exits 0 on success, 1 if Copilot review couldn't be confirmed (non-fatal).
 # Progress on stderr; nothing on stdout.
 
 set -euo pipefail
@@ -23,13 +24,20 @@ REPO_FULL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --pr)   PR="$2";        shift 2 ;;
-    --repo) REPO_FULL="$2"; shift 2 ;;
+    --pr)      [[ -z "${2:-}" ]] && { echo "ERROR: --pr requires a value" >&2; exit 2; }
+               PR="$2"; shift 2 ;;
+    --repo)    [[ -z "${2:-}" ]] && { echo "ERROR: --repo requires a value" >&2; exit 2; }
+               REPO_FULL="$2"; shift 2 ;;
+    -h|--help) awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [[ -z "$PR" ]]        && { echo "ERROR: --pr required" >&2; exit 2; }
 [[ -z "$REPO_FULL" ]] && { echo "ERROR: --repo required" >&2; exit 2; }
+
+command -v gh  >/dev/null || { echo "WARNING: gh CLI not installed; skipping Copilot review request." >&2; exit 1; }
+command -v jq  >/dev/null || { echo "WARNING: jq not installed; skipping Copilot review request." >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "WARNING: gh not authenticated; skipping Copilot review request." >&2; exit 1; }
 
 OWNER="${REPO_FULL%/*}"
 NAME="${REPO_FULL#*/}"
@@ -142,7 +150,7 @@ CONFIRMED="$(gh api graphql \
   -f query='query($owner:String!,$name:String!,$pr:Int!){
     repository(owner:$owner,name:$name){
       pullRequest(number:$pr){
-        reviewRequests(first:10){
+        reviewRequests(first:100){
           nodes{ requestedReviewer{ ... on Bot{ login } ... on User{ login } } }
         }
       }
