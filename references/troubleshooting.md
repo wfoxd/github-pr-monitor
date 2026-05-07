@@ -28,15 +28,15 @@ When new commits land on a PR, GitHub does **not** automatically re-trigger Copi
 
 Copilot is a **Bot** type in GitHub's schema, not a User. `gh pr edit --add-reviewer Copilot` silently exits 0 without doing anything (it doesn't treat this as an error). The REST `requested_reviewers` endpoint returns HTTP 422 for bot accounts. Both approaches look like they worked but don't.
 
-The correct path is the GraphQL `requestReviews` mutation with the `botIds` field (distinct from `userIds` and `teamIds`). Copilot's node id has a `BOT_...` prefix and must be passed as a bot id. `_request_copilot_review.sh` handles this, including a local cache so the node id doesn't need to be re-discovered on every call.
+The correct path is the GraphQL `requestReviews` mutation with the `botIds` field (distinct from `userIds` and `teamIds`). Copilot's node id has a `BOT_...` prefix and must be passed via `botIds` — not `userIds`. `_request_copilot_review.sh` handles this, including a local cache so the node id doesn't need to be re-discovered on every call.
 
 ### Resolving Copilot's node id
 
 The helper tries four sources in order:
 
 1. **Cache** — `${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<name>` (written on first success)
-2. **`suggestedReviewers`** on this PR — works before Copilot has submitted a review (typed as `User` in this context, uses `... on User { id login }`)
-3. **`reviews` on this PR** — once Copilot has reviewed, its node id appears in past reviews (typed as `Bot`, uses `... on Bot { id login }`)
+2. **`suggestedReviewers`** on this PR — works before Copilot has submitted a review; uses `... on User { id login }` because the `suggestedReviewers.reviewer` field is typed as `User` in the GraphQL schema (even for bots)
+3. **`reviews` on this PR** — once Copilot has reviewed, its node id appears in past reviews; uses `... on Bot { id login }` because `review.author` is typed as `Actor`, which includes the `Bot` union member
 4. **Recent PRs on the repo** — last-resort scan of the repo's last 20 PRs for any Copilot review author id
 
 If none of the four resolves an id, Copilot code review is likely not enabled on the repo. The PR remains open and human-reviewer threads still flow through the loop.
@@ -74,7 +74,7 @@ The current design — `pr_check.sh` as a one-shot, agent runs `sleep 60` betwee
 
 ## Rate limits
 
-GraphQL queries against the GitHub API are rate-limited at ~5000 points/hour for authenticated tokens. Each query costs roughly 1 point. The agent polls once per minute = ~60 points/hour, well within budget even with several PRs running in parallel. The Copilot re-request adds one extra mutation + one verification query per push — negligible overhead.
+GraphQL queries against the GitHub API are rate-limited at ~5000 points/hour for authenticated tokens. Query cost varies by shape — a simple status poll costs a few points, while paginated queries (`reviewThreads(first:100)`, `reviews(last:50)`) cost more. The agent polls once per minute; at typical query costs this uses well under 500 points/hour, leaving ample headroom. Each Copilot re-request adds a PR node id lookup + mutation + verification query — a handful of extra points per push, still negligible. Check `rateLimit { cost remaining }` in the GraphQL response if you want to measure exact costs.
 
 ## Manual escape hatch
 
