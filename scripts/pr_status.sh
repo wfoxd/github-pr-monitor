@@ -57,7 +57,7 @@ LATEST_REVIEWS="$(echo "$PR_DATA"  | jq -r '.reviews.nodes
                                             | join(", ")')"
 
 cat <<EOF
-PR #$PR — $TITLE
+TITLE=$TITLE
 URL=$URL
 STATE=$STATE
 DRAFT=$DRAFT

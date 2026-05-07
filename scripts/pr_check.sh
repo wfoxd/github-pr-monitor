@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pr_check.sh — One-shot poll of a PR's review state. No looping, no sleeping —
-# the agent owns the loop. Designed for repeated invocation by an IDE agent
-# (Claude Code, Cursor, etc.) once per polling interval.
+# the agent owns the loop. Designed for repeated invocation by an interactive
+# coding agent (Claude Code, Cursor, Cline, etc.) once per polling interval.
 #
 # Usage:
 #   pr_check.sh --pr <number>
