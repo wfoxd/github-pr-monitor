@@ -5,9 +5,14 @@
 #   pr_push_update.sh --pr <number> [--message "commit message"]
 #
 # Behaviour:
-#   - If there are uncommitted changes and --message is given, stages all and commits.
+#   - If there are staged or modified-tracked changes and --message is given,
+#     stages modified tracked files (NOT untracked) and commits. Any files the
+#     caller has already `git add`ed (including new files they want included)
+#     are committed too. Untracked files left in the working tree are ignored.
+#   - The working-tree status is printed before committing so the caller can
+#     see exactly what is going in.
 #   - If there are uncommitted changes but no --message, errors out.
-#   - If there are no uncommitted changes, just pushes (handles reply-only rounds).
+#   - If there is nothing to commit, just pushes (handles reply-only rounds).
 #   - Always pushes and re-requests Copilot review at the end.
 
 set -euo pipefail
@@ -26,18 +31,37 @@ done
 [[ -z "$PR" ]] && { echo "ERROR: --pr required" >&2; exit 2; }
 
 # --- Commit if there are changes -----------------------------------------
+#
+# We intentionally do NOT `git add -A`: that would sweep up untracked files
+# (stray .env, build artifacts, scratch notes) and commit them silently. We
+# stage only modified-tracked files via `git add -u`; any untracked files the
+# caller actually wants included should be `git add`ed before invoking this
+# script — anything already staged is honoured.
 
-if ! git diff --quiet || ! git diff --cached --quiet; then
+HAS_STAGED=0; HAS_MODIFIED=0; HAS_UNTRACKED=0
+git diff --cached --quiet || HAS_STAGED=1
+git diff --quiet          || HAS_MODIFIED=1
+[[ -n "$(git ls-files --others --exclude-standard)" ]] && HAS_UNTRACKED=1
+
+if [[ "$HAS_STAGED" -eq 1 || "$HAS_MODIFIED" -eq 1 ]]; then
   if [[ -z "$MESSAGE" ]]; then
     echo "ERROR: uncommitted changes present but no --message provided" >&2
     git status --short >&2
     exit 1
   fi
-  echo ">> Staging and committing changes..." >&2
-  git add -A
+
+  echo ">> Working-tree state before commit:" >&2
+  git status --short >&2
+
+  if [[ "$HAS_UNTRACKED" -eq 1 ]]; then
+    echo ">> NOTE: untracked files above will NOT be committed. \`git add\` them first if you want them included." >&2
+  fi
+
+  echo ">> Staging modified tracked files and committing..." >&2
+  git add -u
   git commit -m "$MESSAGE"
 else
-  echo ">> No uncommitted changes; nothing to commit." >&2
+  echo ">> No tracked changes; nothing to commit." >&2
 fi
 
 # --- Push only if local is ahead of remote -------------------------------

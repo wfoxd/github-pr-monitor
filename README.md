@@ -1,8 +1,23 @@
 # github-pr-monitor
 
-An agentic skill for IDE coding agents (Claude Code, Cursor, Cline, etc.) that ships local changes through a GitHub pull request and iterates on review feedback automatically — until the PR is clean.
+An agentic skill for interactive coding agents — terminal CLIs (Claude Code, Codex CLI, etc.), IDE extensions (Cursor, Cline, the Claude Code VS Code extension), or any other session where an agent is continuously available — that ships local changes through a GitHub pull request and iterates on review feedback automatically until the PR is shippable.
 
-You run it once when your local work is done. The skill pushes, opens a PR, asks GitHub Copilot to review, and then **the agent itself** sits in a one-minute polling loop, reading any unresolved review threads, fixing the code, pushing again, and re-requesting review. The loop stops when the PR has zero unresolved review threads.
+You run it once when your local work is done. The skill pushes, opens a PR, asks GitHub Copilot to review, and then **the agent itself** sits in a one-minute polling loop, triaging unresolved review threads, fixing the code, pushing again, and re-requesting review. The loop keeps going while there are blocking issues or low-risk nits the agent can confidently fix; it hands off to you the moment the only thing left is a judgement call or a pile of opinionated nits you might reasonably want to defer to a follow-up PR.
+
+The only real requirement is that the agent is present and reasoning between polls — so this fits any interactive agent context, whether that's an IDE sidebar, a terminal session, or a chat-driven workflow. It is *not* designed for fire-and-forget background automation with no agent in the loop.
+
+## What "done" means
+
+The goal is a *shippable* PR, not one with every single reviewer thought resolved. The agent triages review threads into four buckets:
+
+| Bucket | Example | What the agent does |
+|---|---|---|
+| **Blocker** | Real bug, failing test, missing error-handling, `CHANGES_REQUESTED` | Fixes and pushes |
+| **Auto-fixable nit** | Missing null check, typo, missing docstring on public API, one-line uncovered branch | Fixes and pushes |
+| **Deferrable nit** | Opinionated style tweak, rename in non-local scope, refactor that expands PR scope | Leaves the thread open and surfaces to you |
+| **Needs user judgement** | Architectural direction, API shape, test strategy | Stops the loop and asks you |
+
+When only deferrable nits remain, the agent stops and gives you three explicit options: fix them now (picked individually), merge as-is, or track as a follow-up PR. It never auto-merges.
 
 ## Why this exists
 
@@ -23,18 +38,19 @@ There's no background daemon. The "monitor" is the agent itself, sitting in a lo
         ▼                 ▼                 ▼
    STATUS=WAITING   STATUS=REVIEW_PENDING   STATUS=CLEAN
         │                 │                 │
-   sleep 60         fetch threads        pr_status.sh
-        │                 │              tell the user
+   sleep 60      fetch + triage threads   pr_status.sh
+        │                 │              hand off to user
         └─►(loop)         ▼               (stop)
-                    fix / reply
-                          │
-                          ▼
-                    pr_push_update.sh
-                          │
-                          └─►(loop)
+            ┌─────────┬─────────┬──────────────────┐
+            ▼         ▼         ▼                  ▼
+        blocker / auto-fix   deferrable nit   needs judgement
+            │                     │                  │
+       fix + push           leave open        stop + ask user
+            │                     │                  │
+            └─►(loop)       go to handoff       (wait for user)
 ```
 
-A blocking shell-side wait would be the wrong fit for an IDE: the user couldn't interject, the agent couldn't reason between polls, and any anomaly (Copilot never started, transient API error) would only get noticed when the script eventually returned. With the agent driving, every minute is a chance to narrate progress, notice stalls, take user input, and adjust. The cost is one short tool-call cycle per poll; the benefit is full agentic control.
+A blocking shell-side wait would be the wrong fit for an interactive agent session: the user couldn't interject, the agent couldn't reason between polls, and any anomaly (Copilot never started, transient API error) would only get noticed when the script eventually returned. With the agent driving, every minute is a chance to narrate progress, notice stalls, take user input, and adjust. The cost is one short tool-call cycle per poll; the benefit is full agentic control.
 
 ## Prerequisites
 
@@ -47,10 +63,10 @@ A blocking shell-side wait would be the wrong fit for an IDE: the user couldn't 
 
 ## Install
 
-Unpack the skill into your IDE's skills directory. Locations vary by client:
+Unpack the skill into your agent's skills directory. Locations vary by client:
 
 ```bash
-# Claude Code (per-user)
+# Claude Code (per-user) — works for both the CLI and the VS Code extension
 mkdir -p ~/.claude/skills
 tar -xzf github-pr-monitor.tar.gz -C ~/.claude/skills/
 
@@ -59,7 +75,9 @@ mkdir -p .claude/skills
 tar -xzf github-pr-monitor.tar.gz -C .claude/skills/
 ```
 
-Then either restart your IDE session or open a new agent window so the skill is picked up. Verify with a quick prompt like *"what skills do you have?"* — `github-pr-monitor` should show up.
+Other agent clients (Cursor, Cline, Codex CLI, etc.) have their own skill / prompt-library conventions — drop `SKILL.md` and the `scripts/` directory wherever that client loads agent instructions from, and make sure the scripts stay executable.
+
+After installing, restart your agent session or open a new one so the skill is picked up. Verify with a quick prompt like *"what skills do you have?"* — `github-pr-monitor` should show up.
 
 ## Usage
 
@@ -85,26 +103,40 @@ The skill triggers on phrasing like that. A typical session looks like:
         Poll 2 (1 min elapsed): no reviews yet, will check again in 60s.
         Poll 3: 4 unresolved review thread(s) from Copilot — handling.
 
-        Thread 1 (src/parser.py:42): Copilot suggests using a context
-        manager. Applying fix.
-        Thread 2 (src/parser.py:91): Copilot flags a missing null check.
-        Adding the check.
+        Thread 1 (src/parser.py:42): Copilot flags a missing null check.
+        Blocker — adding the check.
+        Thread 2 (src/parser.py:91): Copilot suggests using a context
+        manager. Auto-fixable nit — applying.
         Thread 3 (tests/test_parser.py:15): Copilot wants a test for the
-        empty-input path. Adding it.
+        empty-input path. Auto-fixable — adding it.
         Thread 4 (src/parser.py:130): Copilot suggests renaming `x` to
-        `parsed_value`. Declining (the variable is local to a 3-line
-        scope; rename adds noise). Replied to thread.
+        `parsed_value`. Declining (variable is local to a 3-line scope;
+        rename adds noise). Replied and resolved.
+        Thread 5 (src/parser.py:210): Copilot suggests extracting the
+        validation block into a separate module. Deferrable — leaving
+        unresolved for you to decide.
 
-        Pushing fixes... re-requesting Copilot review.
+        Pushing blocker + auto-fix changes... re-requesting Copilot review.
 
         Poll 1: no new reviews yet. Poll 2: ...
-        Poll 3: PR is clean — Copilot has no further comments.
+        Poll 3: 1 unresolved thread left (the deferred refactor).
+        No new blockers or auto-fixables — handing off.
 
-[agent] PR #248 is ready: https://github.com/you/repo/pull/248
-        - All review threads resolved
+[agent] PR #248 is in a shippable state: https://github.com/you/repo/pull/248
+        - Blockers / auto-fixes: done
         - Mergeable: MERGEABLE
         - CI: SUCCESS
-        Want me to merge it, or are you waiting on human approval?
+
+        Deferred nits (not applied, open threads):
+        - src/parser.py:210 — extract validation into a separate module.
+          Deferred because it expands the PR's scope.
+
+        Three options:
+        1. Apply the deferred refactor now (I'll handle it and loop once more).
+        2. Merge as-is — the nit is acceptable to ship with.
+        3. Track as a follow-up PR (I can draft the issue / TODO).
+
+        Which would you like?
 ```
 
 You can interject any time — the agent is just running short polls, so a message from you arrives between iterations naturally.
@@ -132,7 +164,8 @@ The agent doesn't grind forever. It surfaces back to the user when:
 - **10 minutes** of `WAITING` with no reviews submitted at all — Copilot may not be enabled on the repo, worth confirming.
 - **60 minutes** total in the loop without convergence.
 - The **same review thread comes back unresolved twice** after the agent claimed to fix it — usually means the fix didn't satisfy the reviewer.
-- **More than 5 push-and-review rounds** without reaching a clean state.
+- **More than 5 push-and-review rounds** without the blocker / auto-fix queue emptying. (Rounds where the only new items are deferrable nits aren't a loop failure — the agent hands off instead.)
+- A thread needs **user judgement** (architecture, API shape, taste calls in broad scope) — the agent stops mid-loop and asks.
 - **`STATUS=ERROR`** — PR closed, merge conflicts, auth lapse, etc.
 - **You interrupt** — just type a message; the agent stops the loop and responds.
 
@@ -142,9 +175,10 @@ The agent also never auto-merges. Even on a clean PR, merging is your call.
 
 - Commit code without showing you what's being committed.
 - Apply a Copilot suggestion that's clearly wrong just to make the reviewer go away. It replies declining-with-reason and resolves the thread instead.
+- Auto-apply opinionated style / refactor suggestions. Those land in the "deferrable nit" bucket and come back to you for a decision.
 - Make architectural / naming / scoping decisions on your behalf — those get surfaced as a question.
 - Resolve merge conflicts. They need human judgement; the loop stops and you're surfaced to.
-- Auto-merge.
+- Auto-merge — even when the PR is fully clean.
 
 ## Troubleshooting
 
@@ -176,3 +210,7 @@ github-pr-monitor/
 ```
 
 `SKILL.md` is what the agent reads to know how to drive the workflow; `README.md` (this file) is what you read to decide whether to use the skill and how to set it up. They're intentionally different audiences.
+
+## Does it need to run in an IDE?
+
+No. Any interactive agent session works — a terminal CLI like Claude Code or Codex CLI, an IDE extension, a web-based agent chat, or even a long-running SSH session with an agent attached. The only thing that *doesn't* work is fully unattended background automation: the design depends on the agent being present to reason between polls and to surface judgement calls back to a human. If nobody is watching, there is no one to say "yes, merge it" or "Copilot's wrong on this one, override it."
