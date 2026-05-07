@@ -81,3 +81,4 @@ GraphQL queries against the GitHub API are rate-limited at ~5000 points/hour for
 If the loop misbehaves, the user can always:
 - Open the PR in the browser, address comments by hand, push, and tell the agent "the PR is done" so it skips to `pr_status.sh` and stops.
 - Just type a message to the agent — since the agent runs the loop itself between short `sleep 60` calls, the user can interject naturally between polls without killing anything.
+- Delete the node id cache file (`${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<name>`) to force re-discovery on the next call — useful if the cached id ever becomes stale.
