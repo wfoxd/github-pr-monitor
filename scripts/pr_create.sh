@@ -81,31 +81,11 @@ else
 fi
 
 # --- Request Copilot review ----------------------------------------------
-#
-# Method 1: gh pr edit --add-reviewer Copilot (newer gh versions)
-# Method 2: REST API requested_reviewers endpoint
-# Both can fail if the org doesn't have Copilot code review enabled — that is
-# a warning, not a fatal error.
-
-echo ">> Requesting Copilot review..." >&2
 
 REPO_FULL="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-COPILOT_OK=0
 
-if gh pr edit "$PR_NUMBER" --add-reviewer Copilot >/dev/null 2>&1; then
-  COPILOT_OK=1
-elif gh api -X POST "/repos/$REPO_FULL/pulls/$PR_NUMBER/requested_reviewers" \
-       -f 'reviewers[]=copilot-pull-request-reviewer' >/dev/null 2>&1; then
-  COPILOT_OK=1
-fi
-
-if [[ "$COPILOT_OK" -eq 1 ]]; then
-  echo ">> Copilot review requested." >&2
-else
-  echo ">> WARNING: could not request Copilot review automatically." >&2
-  echo "   The PR is open and the loop will still work for any reviewer's comments." >&2
-  echo "   Possible causes: org has not enabled Copilot code review, or repo lacks the entitlement." >&2
-fi
+echo ">> Requesting Copilot review..." >&2
+bash "$(dirname "$0")/_request_copilot_review.sh" --pr "$PR_NUMBER" --repo "$REPO_FULL" || true
 
 # --- Final parseable output ----------------------------------------------
 

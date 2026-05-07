@@ -92,11 +92,5 @@ fi
 
 REPO_FULL="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 
-if gh pr edit "$PR" --add-reviewer Copilot >/dev/null 2>&1; then
-  echo ">> Copilot re-review requested." >&2
-elif gh api -X POST "/repos/$REPO_FULL/pulls/$PR/requested_reviewers" \
-       -f 'reviewers[]=copilot-pull-request-reviewer' >/dev/null 2>&1; then
-  echo ">> Copilot re-review requested." >&2
-else
-  echo ">> WARNING: could not re-request Copilot review (continuing anyway)." >&2
-fi
+echo ">> Re-requesting Copilot review..." >&2
+bash "$(dirname "$0")/_request_copilot_review.sh" --pr "$PR" --repo "$REPO_FULL" || true
