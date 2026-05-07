@@ -34,7 +34,7 @@ The correct path is the GraphQL `requestReviews` mutation with the `botIds` fiel
 
 The helper tries four sources in order:
 
-1. **Cache** — `~/.cache/github-pr-monitor/copilot_node_id_<owner>_<name>` (written on first success)
+1. **Cache** — `${XDG_CACHE_HOME:-~/.cache}/github-pr-monitor/copilot_node_id_<owner>_<name>` (written on first success)
 2. **`suggestedReviewers`** on this PR — works before Copilot has submitted a review (typed as `User` in this context, uses `... on User { id login }`)
 3. **`reviews` on this PR** — once Copilot has reviewed, its node id appears in past reviews (typed as `Bot`, uses `... on Bot { id login }`)
 4. **Recent PRs on the repo** — last-resort scan of the repo's last 20 PRs for any Copilot review author id
