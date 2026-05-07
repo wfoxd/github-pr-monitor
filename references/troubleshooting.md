@@ -22,9 +22,24 @@ Replying to a thread uses the REST endpoint `POST /repos/{repo}/pulls/{pr}/comme
 
 ## Re-requesting Copilot review after a new push
 
-When new commits land on a PR, GitHub does **not** automatically re-trigger Copilot review. The previous review state stays attached to the old commit. You have to explicitly re-request the reviewer, which is why `pr_push_update.sh` does that on every push.
+When new commits land on a PR, GitHub does **not** automatically re-trigger Copilot review. The previous review state stays attached to the old commit. You have to explicitly re-request the reviewer, which is why `pr_push_update.sh` calls `_request_copilot_review.sh` on every push.
 
-If a normal `gh pr edit --add-reviewer Copilot` does nothing because Copilot is already a current reviewer, the script falls back to the REST `requested_reviewers` POST. If the org doesn't have Copilot enabled at all, both fail and the script warns but doesn't abort — review threads from human reviewers still flow through the same loop.
+### Why `gh pr edit --add-reviewer` doesn't work for Copilot
+
+Copilot is a **Bot** type in GitHub's schema, not a User. `gh pr edit --add-reviewer Copilot` silently exits 0 without doing anything (it doesn't treat this as an error). The REST `requested_reviewers` endpoint returns HTTP 422 for bot accounts. Both approaches look like they worked but don't.
+
+The correct path is the GraphQL `requestReviews` mutation with the `botIds` field (distinct from `userIds` and `teamIds`). Copilot's node id has a `BOT_...` prefix and must be passed as a bot id. `_request_copilot_review.sh` handles this, including a local cache so the node id doesn't need to be re-discovered on every call.
+
+### Resolving Copilot's node id
+
+The helper tries four sources in order:
+
+1. **Cache** — `~/.cache/github-pr-monitor/copilot_node_id_<owner>_<name>` (written on first success)
+2. **`suggestedReviewers`** on this PR — works before Copilot has submitted a review (typed as `User` in this context, uses `... on User { id login }`)
+3. **`reviews` on this PR** — once Copilot has reviewed, its node id appears in past reviews (typed as `Bot`, uses `... on Bot { id login }`)
+4. **Recent PRs on the repo** — last-resort scan of the repo's last 20 PRs for any Copilot review author id
+
+If none of the four resolves an id, Copilot code review is likely not enabled on the repo. The PR remains open and human-reviewer threads still flow through the loop.
 
 ## Detecting a "clean" PR
 
@@ -36,7 +51,7 @@ If a normal `gh pr edit --add-reviewer Copilot` does nothing because Copilot is 
 
 ## Why the loop lives in the agent, not in a script
 
-Earlier drafts had a `pr_wait.sh` that polled internally and blocked for up to an hour. That was wrong for an IDE context. A blocking shell loop means:
+Earlier drafts had a `pr_wait.sh` that polled internally and blocked for up to an hour. That was wrong for an interactive agent context. A blocking shell loop means:
 
 - The user can't interject mid-wait without breaking the script.
 - The agent can't reason between polls — it just gets one notification an hour later when the script finally returns.
