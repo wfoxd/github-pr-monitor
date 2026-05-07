@@ -74,7 +74,7 @@ The current design — `pr_check.sh` as a one-shot, agent runs `sleep 60` betwee
 
 ## Rate limits
 
-GraphQL queries against the GitHub API are rate-limited at ~5000 points/hour for authenticated tokens. The agent polls once per minute = 60/hour, which is safely within budget even with several PRs running in parallel.
+GraphQL queries against the GitHub API are rate-limited at ~5000 points/hour for authenticated tokens. Each query costs roughly 1 point. The agent polls once per minute = ~60 points/hour, well within budget even with several PRs running in parallel. The Copilot re-request adds one extra mutation + one verification query per push — negligible overhead.
 
 ## Manual escape hatch
 
