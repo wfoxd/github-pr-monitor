@@ -24,17 +24,17 @@ Replying to a thread uses the REST endpoint `POST /repos/{repo}/pulls/{pr}/comme
 
 When new commits land on a PR, GitHub does **not** automatically re-trigger Copilot review. The previous review state stays attached to the old commit. You have to explicitly re-request the reviewer, which is why `pr_push_update.sh` calls `_request_copilot_review.sh` on every push.
 
-### Why `gh pr edit --add-reviewer` doesn't work for Copilot
+### Why common reviewer-request approaches don't work for Copilot
 
 Copilot is a **Bot** type in GitHub's schema, not a User. `gh pr edit --add-reviewer Copilot` silently exits 0 without doing anything (it doesn't treat this as an error). The REST `requested_reviewers` endpoint returns HTTP 422 for bot accounts. Both approaches look like they worked but don't.
 
-The correct path is the GraphQL `requestReviews` mutation with the `botIds` field (distinct from `userIds` and `teamIds`). Copilot's node id has a `BOT_...` prefix and must be passed via `botIds` — not `userIds`. `_request_copilot_review.sh` handles this, including a local cache so the node id doesn't need to be re-discovered on every call.
+The correct path is the GraphQL `requestReviews` mutation with the `botIds` field (distinct from `userIds` and `teamIds`). Copilot's node id is a Bot-type global id (observably starts with `BOT_`, though this is an implementation detail rather than a documented guarantee) and must be passed via `botIds` — not `userIds`. `_request_copilot_review.sh` handles this, including a local cache so the node id doesn't need to be re-discovered on every call.
 
 ### Resolving Copilot's node id
 
 The helper tries four sources in order:
 
-1. **Cache** — `${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<name>` (written on first success)
+1. **Cache** — `${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<repo>` (written on first success)
 2. **`suggestedReviewers`** on this PR — works before Copilot has submitted a review; uses `... on User { id login }` because the `suggestedReviewers.reviewer` field is typed as `User` in the GraphQL schema (even for bots)
 3. **`reviews` on this PR** — once Copilot has reviewed, its node id appears in past reviews; uses `... on Bot { id login }` because `review.author` is typed as `Actor`, which includes the `Bot` union member
 4. **Recent PRs on the repo** — last-resort scan of the repo's last 20 PRs for any Copilot review author id
@@ -81,4 +81,4 @@ GraphQL queries against the GitHub API are rate-limited at ~5000 points/hour for
 If the loop misbehaves, the user can always:
 - Open the PR in the browser, address comments by hand, push, and tell the agent "the PR is done" so it skips to `pr_status.sh` and stops.
 - Just type a message to the agent — since the agent runs the loop itself between short `sleep 60` calls, the user can interject naturally between polls without killing anything.
-- Delete the node id cache file (`${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<name>`) to force re-discovery on the next call — useful if the cached id ever becomes stale.
+- Delete the node id cache file (`${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<repo>`) to force re-discovery on the next call — useful if the cached id ever becomes stale.
