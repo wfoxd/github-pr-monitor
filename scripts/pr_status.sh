@@ -4,7 +4,7 @@
 # Usage:
 #   pr_status.sh --pr <number>
 #
-# Output: human-readable lines (also parseable as KEY=VALUE where it matters).
+# Output: KEY=VALUE lines on stdout; human-readable progress on stderr.
 
 set -euo pipefail
 
