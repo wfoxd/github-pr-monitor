@@ -143,7 +143,7 @@ You can interject any time — the agent is just running short polls, so a messa
 
 ## Scripts
 
-The skill is one `SKILL.md` (the agent's instructions) plus seven small bash scripts the agent calls. Everything is shell + `gh` + `jq` — no Python, no daemons, no global state.
+The skill is one `SKILL.md` (the agent's instructions) plus bash scripts the agent calls. Everything is shell + `gh` + `jq` — no Python, no daemons, no global state.
 
 | Script | Purpose |
 |---|---|
@@ -154,8 +154,9 @@ The skill is one `SKILL.md` (the agent's instructions) plus seven small bash scr
 | `scripts/pr_reply_thread.sh` | Post a reply on a review thread (used when declining a suggestion) |
 | `scripts/pr_push_update.sh` | Commit + push fixes + re-request review |
 | `scripts/pr_status.sh` | High-level PR state (reviews, threads, checks, mergeable) |
+| `scripts/_request_copilot_review.sh` | Internal helper called by `pr_create.sh` and `pr_push_update.sh` — resolves Copilot's GraphQL node id (cached in `~/.cache/github-pr-monitor/`) and calls the `requestReviews` mutation |
 
-Each script supports `--help`. Output is parseable `KEY=VALUE` lines on stdout; human-readable progress goes to stderr. They're independently usable from a shell if you want to script around them.
+The seven public scripts each support `--help`. Output is parseable `KEY=VALUE` lines on stdout; human-readable progress goes to stderr. They're independently usable from a shell if you want to script around them. The `_request_copilot_review.sh` helper is internal and not designed to be called directly.
 
 ## Loop guards
 
@@ -204,7 +205,8 @@ github-pr-monitor/
 │   ├── pr_resolve_thread.sh
 │   ├── pr_reply_thread.sh
 │   ├── pr_push_update.sh
-│   └── pr_status.sh
+│   ├── pr_status.sh
+│   └── _request_copilot_review.sh  # Internal helper; not called directly
 └── references/
     └── troubleshooting.md     # Loaded by the agent on demand when something goes wrong
 ```

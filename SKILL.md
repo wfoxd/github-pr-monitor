@@ -194,5 +194,6 @@ When Copilot's suggestion is clearly wrong (it sometimes hallucinates APIs or mi
 | `scripts/pr_reply_thread.sh` | Post a reply on a review thread |
 | `scripts/pr_push_update.sh` | Commit + push + re-request review |
 | `scripts/pr_status.sh` | High-level PR state (reviews, checks, mergeable) |
+| `scripts/_request_copilot_review.sh` | Internal helper: resolve Copilot's node id (with cache) and call `requestReviews` GraphQL mutation |
 
 For deeper detail on the GitHub APIs used and common failure modes, see `references/troubleshooting.md`.
