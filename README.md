@@ -101,7 +101,7 @@ The skill triggers on phrasing like that. A typical session looks like:
 
         Poll 1 (0 min elapsed): no reviews yet, will check again in 60s.
         Poll 2 (1 min elapsed): no reviews yet, will check again in 60s.
-        Poll 3: 4 unresolved review thread(s) from Copilot — handling.
+        Poll 3: 5 unresolved review thread(s) from Copilot — handling.
 
         Thread 1 (src/parser.py:42): Copilot flags a missing null check.
         Blocker — adding the check.

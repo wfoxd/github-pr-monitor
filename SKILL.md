@@ -11,7 +11,7 @@ An agentic workflow for shipping local changes through a pull request and iterat
 
 ## Design: the agent is the monitor
 
-This skill is built for IDE coding agents (Claude Code, Cursor, Cline, etc.) where the agent is always present and reasoning. There is no background daemon. The "monitor" is the agent itself, sitting in a loop that:
+This skill is built for interactive coding agents (Claude Code in terminal or VS Code, Cursor, Cline, Codex CLI, etc.) where the agent is always present and reasoning between polls. There is no background daemon. The "monitor" is the agent itself, sitting in a loop that:
 
 1. Calls `pr_check.sh` (a one-shot status query — fast, no blocking).
 2. Reads the result and reasons about it.

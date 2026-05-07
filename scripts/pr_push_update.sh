@@ -62,6 +62,11 @@ if [[ "$HAS_STAGED" -eq 1 || "$HAS_MODIFIED" -eq 1 ]]; then
   git commit -m "$MESSAGE"
 else
   echo ">> No tracked changes; nothing to commit." >&2
+  if [[ "$HAS_UNTRACKED" -eq 1 ]]; then
+    echo ">> NOTE: there are untracked files in the working tree that were NOT committed:" >&2
+    git ls-files --others --exclude-standard >&2
+    echo "   If any of these should be in the PR, \`git add\` them and call this script again." >&2
+  fi
 fi
 
 # --- Push only if local is ahead of remote -------------------------------
