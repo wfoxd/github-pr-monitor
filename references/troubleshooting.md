@@ -34,7 +34,7 @@ The correct path is the GraphQL `requestReviews` mutation with the `botIds` fiel
 
 The helper tries four sources in order:
 
-1. **Cache** — `${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<repo>` (written on first success)
+1. **Cache** — `${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<name>` (written on first success)
 2. **`suggestedReviewers`** on this PR — works before Copilot has submitted a review; uses `... on User { id login }` because the `suggestedReviewers.reviewer` field is typed as `User` in the GraphQL schema (even for bots)
 3. **`reviews` on this PR** — once Copilot has reviewed, its node id appears in past reviews; uses `... on Bot { id login }` because `review.author` is typed as `Actor`, which includes the `Bot` union member
 4. **Recent PRs on the repo** — last-resort scan of the repo's last 20 PRs for any Copilot review author id
@@ -81,4 +81,4 @@ GraphQL queries against the GitHub API are rate-limited at ~5000 points/hour for
 If the loop misbehaves, the user can always:
 - Open the PR in the browser, address comments by hand, push, and tell the agent "the PR is done" so it skips to `pr_status.sh` and stops.
 - Just type a message to the agent — since the agent runs the loop itself between short `sleep 60` calls, the user can interject naturally between polls without killing anything.
-- Delete the node id cache file (`${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<repo>`) to force re-discovery on the next call — useful if the cached id ever becomes stale.
+- Delete the node id cache file (`${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/copilot_node_id_<owner>_<name>`) to force re-discovery on the next call — useful if the cached id ever becomes stale.
