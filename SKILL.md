@@ -163,7 +163,7 @@ Then return to Phase 3. The polling loop resumes.
 Reach this phase when any of these are true:
 - `pr_check.sh` reports `STATUS=CLEAN` (everything resolved, at least one review submitted).
 - The only unresolved threads left are **deferrable nits** — blockers and auto-fixable items are all done.
-- A **needs-user-judgement** thread has paused the loop and you're asking for direction.
+- A **needs user judgement** thread has paused the loop and you're asking for direction.
 
 #### Steps
 
@@ -171,34 +171,34 @@ Reach this phase when any of these are true:
 
 2. **Generate the review report.** Output it as a formatted block — not prose. Use this structure:
 
-```
-## PR Review Report
+   ```
+   ## PR Review Report
 
-**PR:** #<n> — <title>
-**URL:** <url>
-**Time in loop:** <N> min
-**Review rounds:** <N>
+   **PR:** #<n> — <title>
+   **URL:** <url>
+   **Time in loop:** <N> min
+   **Review rounds:** <N>
 
-### What was done
-<list every applied fix — one line each>
-- [<bucket>] `<file>:<line>` — <one-sentence summary> (<reviewer>)
+   ### What was done
+   <list every applied fix — one line each>
+   - [<bucket>] `<file>:<line>` — <one-sentence summary> (<reviewer>)
 
-### Deferred (open threads — your call)
-<list every deferrable nit left open, or "None">
-- `<file>:<line>` — <one-sentence summary> | Reason: <why deferred> (<reviewer>)
+   ### Deferred (open threads — your call)
+   <list every deferrable nit left open, or "None">
+   - `<file>:<line>` — <one-sentence summary> | Reason: <why deferred> (<reviewer>)
 
-### Declined (replied + resolved without applying)
-<list every declined suggestion, or "None">
-- `<file>:<line>` — <one-sentence summary> | Reason: <why declined> (<reviewer>)
+   ### Declined (replied + resolved without applying)
+   <list every declined suggestion, or "None">
+   - `<file>:<line>` — <one-sentence summary> | Reason: <why declined> (<reviewer>)
 
-### Status
-- Mergeable: <MERGEABLE / CONFLICTING / UNKNOWN>
-- Review decision: <APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED / none>
-- CI checks: <SUCCESS / FAILURE / PENDING / none>
-- Unresolved threads: <N>
-```
+   ### Status
+   - Mergeable: <value from pr_status.sh MERGEABLE field>
+   - Review decision: <value from pr_status.sh REVIEW_DECISION field>
+   - CI checks: <value from pr_status.sh CHECKS field>
+   - Unresolved threads: <N>
+   ```
 
-3. For any **deferred** or **needs-user-judgement** items, offer three explicit options:
+3. For any **deferred** or **needs user judgement** items, offer three explicit options:
    - **Fix now** — pick which items to apply; the agent handles them and loops once more.
    - **Merge as-is** — the remaining items are acceptable to ship with.
    - **Follow-up PR** — note the deferred items as TODOs or a tracking issue; proceed to merge.
