@@ -163,7 +163,7 @@ Then return to Phase 3. The polling loop resumes.
 Reach this phase when any of these are true:
 - `pr_check.sh` reports `STATUS=CLEAN` (everything resolved, at least one review submitted).
 - The only unresolved threads left are **deferrable nits** — blockers and auto-fixable items are all done.
-- A **needs user judgement** thread has paused the loop and you're asking for direction.
+- A **Needs user judgement** thread has paused the loop and you're asking for direction.
 
 #### Steps
 
@@ -195,10 +195,10 @@ Reach this phase when any of these are true:
    - Mergeable: <value from pr_status.sh MERGEABLE field>
    - Review decision: <value from pr_status.sh REVIEW_DECISION field>
    - CI checks: <value from pr_status.sh CHECKS field>
-   - Unresolved threads: <N>
+   - Unresolved threads: <value from pr_status.sh THREADS_UNRESOLVED field>
    ```
 
-3. For any **deferred** or **needs user judgement** items, offer three explicit options:
+3. For any **deferred** or **Needs user judgement** items, offer three explicit options:
    - **Fix now** — pick which items to apply; the agent handles them and loops once more.
    - **Merge as-is** — the remaining items are acceptable to ship with.
    - **Follow-up PR** — note the deferred items as TODOs or a tracking issue; proceed to merge.
@@ -213,7 +213,7 @@ Mapping Copilot's common comment types onto the Phase-4 triage buckets:
 - **Test coverage gaps** → **auto-fixable nit** when the uncovered branch is genuinely reachable and the test is small; **deferrable nit** when writing the test would balloon the PR.
 - **Documentation** → **auto-fixable nit** for public API; **deferrable nit** for private internals unless the reviewer explicitly pushes back.
 - **Style / readability nits** → **deferrable nit** by default. Only auto-apply when the improvement is obvious and the change is one line. Pure preference fixes are a classic source of churn — leave them for the user to accept or drop.
-- **Rename / refactor suggestions** → **deferrable nit** unless the scope is truly local (three-line function, etc.). Broader renames are **needs user judgement**.
+- **Rename / refactor suggestions** → **deferrable nit** unless the scope is truly local (three-line function, etc.). Broader renames are **Needs user judgement**.
 
 When Copilot's suggestion is clearly wrong (it sometimes hallucinates APIs or misreads context), reply explaining why and resolve the thread. Don't apply incorrect "fixes" just to make the reviewer go away. If Copilot re-flags the same nit after a decline-with-reply, treat it as actively rejected on the second occurrence and move on; tell the user.
 
