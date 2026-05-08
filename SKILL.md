@@ -77,7 +77,7 @@ This is fast (one GraphQL call) and prints `STATUS=...` plus context. Read the s
 | `CLEAN`           | Zero unresolved threads, ≥1 review submitted.         | Jump to Phase 6 (hand off).                        |
 | `ERROR`           | PR closed/merged, or API failure.                     | Surface to user; stop the loop.                    |
 
-**Heartbeat to the user.** On every poll iteration in the `WAITING` state, output one short line of progress to the user — this is an IDE, they're watching. Example: `> Poll 3 (3 min elapsed): no reviews yet, will check again in 60s.` Do not spam status — one line per minute is plenty.
+**Heartbeat to the user.** On every poll iteration in the `WAITING` state, output one short line of progress to the user — they're watching. Example: `> Poll 3 (3 min elapsed): no reviews yet, will check again in 60s.` Do not spam status — one line per minute is plenty.
 
 **Loop guards (to surface to user instead of grinding forever):**
 
