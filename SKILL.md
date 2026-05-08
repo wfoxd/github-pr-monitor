@@ -77,7 +77,14 @@ This is fast (one GraphQL call) and prints `STATUS=...` plus context. Read the s
 | `CLEAN`           | Zero unresolved threads, ≥1 review submitted.         | Jump to Phase 6 (hand off).                        |
 | `ERROR`           | PR closed/merged, or API failure.                     | Surface to user; stop the loop.                    |
 
-**Heartbeat to the user.** On every poll iteration in the `WAITING` state, output one short line of progress to the user — this is an IDE, they're watching. Example: `> Poll 3 (3 min elapsed): no reviews yet, will check again in 60s.` Do not spam status — one line per minute is plenty.
+**Heartbeat to the user.** On every poll iteration in the `WAITING` state, output one short line of progress to the user — they're watching. Example: `> Poll 3 (3 min elapsed): no reviews yet, will check again in 60s.` Do not spam status — one line per minute is plenty.
+
+**Track loop state for the final report.** Maintain an in-memory log across all iterations:
+- `start_time` — when the loop began (for elapsed time)
+- `rounds` — count of push-and-review cycles completed
+- `applied[]` — list of `{round, file, line, reviewer, summary, bucket}` for every blocker/auto-fix applied
+- `deferred[]` — list of `{file, line, reviewer, summary, reason}` for every deferrable nit left open
+- `declined[]` — list of `{file, line, reviewer, summary, reason}` for every thread replied-to and resolved without applying
 
 **Loop guards (to surface to user instead of grinding forever):**
 
@@ -151,25 +158,52 @@ The script:
 
 Then return to Phase 3. The polling loop resumes.
 
-### Phase 6 — Hand off to the user
+### Phase 6 — Generate review report and hand off
 
 Reach this phase when any of these are true:
 - `pr_check.sh` reports `STATUS=CLEAN` (everything resolved, at least one review submitted).
 - The only unresolved threads left are **deferrable nits** — blockers and auto-fixable items are all done.
-- A **needs-user-judgement** thread has paused the loop and you're asking for direction.
+- A **Needs user judgement** thread has paused the loop and you're asking for direction.
 
-Steps:
+#### Steps
 
-1. Run `bash scripts/pr_status.sh --pr <PR_NUMBER>` for a final summary (review states, mergeable status, CI checks).
-2. Tell the user the current state and link to the PR. Be explicit about what's done and what isn't:
-   - List any **deferrable nits** you chose not to auto-apply, one line each with the file/line and a short paraphrase of the suggestion. Say *why* you deferred (scope, churn, opinionated).
-   - Surface any **needs-user-judgement** thread with enough context for them to decide.
-   - If everything really is resolved, just say so.
-3. For any outstanding items, offer the user three explicit options:
-   - **Fix now** — they pick which nits to apply; the agent handles them and loops once more.
-   - **Merge as-is** — the remaining nits are acceptable to ship with. (The agent still does not auto-merge; see below.)
-   - **Follow-up PR** — note the deferred items (e.g. a TODO list or a tracking issue); proceed to merge consideration.
-4. **Do not auto-merge.** Merging is always the user's call — even on a fully clean PR, they may want to wait for human approval, CI to finish, or coordinate with other changes. Ask before merging.
+1. Run `bash scripts/pr_status.sh --pr <PR_NUMBER>` for the final machine-readable state.
+
+2. **Generate the review report.** Output it as a formatted block — not prose. Use this structure:
+
+   ```
+   ## PR Review Report
+
+   **PR:** #<n> — <title>
+   **URL:** <url>
+   **Time in loop:** <N> min
+   **Review rounds:** <N>
+
+   ### What was done
+   <list every applied fix — one line each>
+   - [<bucket>] `<file>:<line>` — <one-sentence summary> (<reviewer>)
+
+   ### Deferred (open threads — your call)
+   <list every deferrable nit left open, or "None">
+   - `<file>:<line>` — <one-sentence summary> | Reason: <why deferred> (<reviewer>)
+
+   ### Declined (replied + resolved without applying)
+   <list every declined suggestion, or "None">
+   - `<file>:<line>` — <one-sentence summary> | Reason: <why declined> (<reviewer>)
+
+   ### Status
+   - Mergeable: <value from pr_status.sh MERGEABLE field>
+   - Review decision: <value from pr_status.sh REVIEW_DECISION field>
+   - CI checks: <value from pr_status.sh CHECKS field>
+   - Unresolved threads: <value from pr_status.sh THREADS_UNRESOLVED field>
+   ```
+
+3. For any **deferred** or **Needs user judgement** items, offer three explicit options:
+   - **Fix now** — pick which items to apply; the agent handles them and loops once more.
+   - **Merge as-is** — the remaining items are acceptable to ship with.
+   - **Follow-up PR** — note the deferred items as TODOs or a tracking issue; proceed to merge.
+
+4. **Do not auto-merge.** Merging is always the user's call — even on a fully clean PR. Ask before merging.
 
 ## Heuristics for handling Copilot review specifically
 
@@ -179,7 +213,7 @@ Mapping Copilot's common comment types onto the Phase-4 triage buckets:
 - **Test coverage gaps** → **auto-fixable nit** when the uncovered branch is genuinely reachable and the test is small; **deferrable nit** when writing the test would balloon the PR.
 - **Documentation** → **auto-fixable nit** for public API; **deferrable nit** for private internals unless the reviewer explicitly pushes back.
 - **Style / readability nits** → **deferrable nit** by default. Only auto-apply when the improvement is obvious and the change is one line. Pure preference fixes are a classic source of churn — leave them for the user to accept or drop.
-- **Rename / refactor suggestions** → **deferrable nit** unless the scope is truly local (three-line function, etc.). Broader renames are **needs user judgement**.
+- **Rename / refactor suggestions** → **deferrable nit** unless the scope is truly local (three-line function, etc.). Broader renames are **Needs user judgement**.
 
 When Copilot's suggestion is clearly wrong (it sometimes hallucinates APIs or misreads context), reply explaining why and resolve the thread. Don't apply incorrect "fixes" just to make the reviewer go away. If Copilot re-flags the same nit after a decline-with-reply, treat it as actively rejected on the second occurrence and move on; tell the user.
 
