@@ -154,7 +154,7 @@ The skill is one `SKILL.md` (the agent's instructions) plus bash scripts the age
 | `scripts/pr_reply_thread.sh` | Post a reply on a review thread (used when declining a suggestion) |
 | `scripts/pr_push_update.sh` | Commit + push fixes + re-request review |
 | `scripts/pr_status.sh` | High-level PR state (reviews, threads, checks, mergeable) |
-| `scripts/_request_copilot_review.sh` | Internal helper called by `pr_create.sh` and `pr_push_update.sh` — resolves Copilot's GraphQL node id (cached in `~/.cache/github-pr-monitor/`) and calls the `requestReviews` mutation |
+| `scripts/_request_copilot_review.sh` | Internal helper called by `pr_create.sh` and `pr_push_update.sh` — resolves Copilot's GraphQL node id (cached in `${XDG_CACHE_HOME:-$HOME/.cache}/github-pr-monitor/`) and calls the `requestReviews` mutation |
 
 The seven public scripts each support `--help`. Output is parseable `KEY=VALUE` lines on stdout; human-readable progress goes to stderr. They're independently usable from a shell if you want to script around them. The `_request_copilot_review.sh` helper is internal and not designed to be called directly.
 
