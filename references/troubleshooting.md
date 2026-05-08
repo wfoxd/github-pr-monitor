@@ -26,7 +26,7 @@ When new commits land on a PR, GitHub does **not** automatically re-trigger Copi
 
 ### Why common reviewer-request approaches don't work for Copilot
 
-Copilot is a **Bot** type in GitHub's schema, not a User. `gh pr edit --add-reviewer Copilot` silently exits 0 without doing anything. The REST `requested_reviewers` endpoint returns HTTP 422 for bot accounts. Both approaches look like they worked but don't.
+Copilot is a bot account — it appears under a `User`-typed field in some GraphQL contexts (e.g. `suggestedReviewers.reviewer`) but is a `Bot` actor type in others (e.g. `review.author`). Crucially, it cannot be added as a reviewer via user-oriented APIs: `gh pr edit --add-reviewer Copilot` silently exits 0 without doing anything, and the REST `requested_reviewers` endpoint returns HTTP 422. Both approaches look like they worked but don't.
 
 The correct path is the GraphQL `requestReviews` mutation with the `botIds` field (distinct from `userIds` and `teamIds`). Copilot's node id is a Bot-type global id (observably starts with `BOT_`, though this is an implementation detail rather than a documented guarantee) and must be passed via `botIds` — not `userIds`. `_request_copilot_review.sh` handles this, including a local cache so the node id doesn't need to be re-discovered on every call.
 
